@@ -1,0 +1,9 @@
+##grflangid 0x01
+# This is the English language file
+
+# GRF name and description definitions
+STR_GRF_NAME        :CityMania Special Events 1.4
+STR_GRF_DESCRIPTION :CityMania Special Events 1.4
+
+STR_XMAS_TREE_1 :Christmas Tree
+
