@@ -1,4 +1,18 @@
 {
     "version": 1,
-    "index": {}
+    "index": {
+        "industry_tile": {
+            "__industry_300_main_tile": 0,
+            "__industry_301_main_tile": 1,
+            "__industry_302_main_tile": 2,
+            "__industry_37_main_tile": 3,
+            "__industry_38_main_tile": 4,
+            "__industry_39_main_tile": 5
+        },
+        "industry": {
+            "gift_box_1": 37,
+            "gift_box_2": 38,
+            "gift_box_3": 39
+        }
+    }
 }

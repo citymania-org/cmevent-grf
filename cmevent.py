@@ -12,6 +12,8 @@ g = grf.NewGRF(
     version=4,
 )
 
+Industry = g.bind(grf.Industry)
+
 g.add(grf.ReplaceOldSprites([(2072, 6)]))
 png = grf.ImageFile("gfx/candyflossforest.png")
 for x, y, w, h, xofs, yofs in [
@@ -31,9 +33,12 @@ g.add(grf.FileSprite(png, 10, 107, 25, 46, xofs=-15, yofs=-39))
 g.add(grf.ReplaceOldSprites([(2601, 1)]))
 g.add(grf.FileSprite(png, 123, 20, 64, 77, xofs=-31, yofs=-60))
 
-g.set_cargo_table(['BATT', 'BUBL', 'COLA', 'CTCD', 'FZDR', 'PLST', 'SWET', 'SUGR', 'TOFF', 'TOYS', 'PASS', 'MAIL'])
+BATT, BUBL, COLA, CTCD, FZDR, PLST, SWET, SUGR, TOFF, TOYS, PASS, MAIL = \
+    g.set_cargo_table(['BATT', 'BUBL', 'COLA', 'CTCD', 'FZDR', 'PLST', 'SWET', 'SUGR', 'TOFF', 'TOYS', 'PASS', 'MAIL'])
 
-RAIL, ELRL, MONO, MGLV, UNIV, WETR, UNI1 = g.set_railtype_table(['RAIL', 'ELRL', 'MONO', 'MGLV', 'UNIV', 'WETR', 'UNI1'])
+RAIL, ELRL, MONO, MGLV, UNIV, WETR, UNI1 = \
+    g.set_railtype_table(['RAIL', 'ELRL', 'MONO', 'MGLV', 'UNIV', 'WETR', 'UNI1'])
+
 for i, l in ((1, b'RAIL'), (2, b'ELRL'), (3, b'MONO'), (4, b'MGLV'), (12, b'WETR')):
     g.add(grf.Define(
         feature=grf.RAILTYPE,
@@ -218,7 +223,7 @@ add_cargo(
 )
 
 add_cargo(
-    id=4,
+    id=5,
     label=b'SWET',
     units_of_cargo=grf.TTDString.BAGS,
     cargo_payment_list_colour=194,
@@ -239,7 +244,7 @@ add_cargo(
 )
 
 add_cargo(
-    id=5,
+    id=6,
     label=b'TOFF',
     units_of_cargo=grf.TTDString.TONS,
     cargo_payment_list_colour=191,
@@ -581,6 +586,100 @@ add_industry(
     mapgen_probability=4,
     acceptance_types=['TOYS'],
     special_flags=0,
+)
+
+
+def add_gift_industry(tier, image, z_extent, **props):
+    img = grf.ImageFile(image)
+    sprite = grf.FileSprite(img, 1, 1, 256, 282, xofs=-127, yofs=-251)
+
+    ind = Industry(
+        id=f'gift_box_{tier}',
+        substitute_type=0,
+        name=f'Gift (Tier {tier})',
+        layouts=[
+            [(0, 0, Industry.Building(size=(4, 4), sprite=sprite))],
+        ],
+        z_extent=z_extent,
+        ground_sprite_id=1420,
+        production_types=[],
+        special_flags=0x10000 | 0x20000,
+        **props,
+    )
+
+    ind.callbacks.input_cargo = grf.Eval(
+        'PERM[extra_callback_info1_byte * 2]',
+        default=0xFF,
+    )
+
+    return ind
+
+t1 = add_gift_industry(
+    tier=1,
+    image="gfx/gift_box.png",
+    z_extent=154,
+    acceptance_types=['PASS', 'MAIL'],
+)
+
+t1.callbacks.init_production = grf.Eval(
+    f'''
+        PERM[0] = {PASS}
+        PERM[1] = 1000
+        PERM[2] = {MAIL}
+        PERM[3] = 200
+        PERM[4] = 0xFF
+        PERM[5] = 0
+        16
+    ''',
+    default=16,
+)
+
+t1.callbacks.cargo_subtype_display = grf.Switch(
+    f'''TEMP[100] = PERM[1]''',
+    ranges={
+        0: g.strings.add(' ({COMMA}/{COMMA})').get_global_id(),
+    },
+    default=0x400,
+)
+
+# require 3 out of n
+t2 = add_gift_industry(
+    tier=2,
+    image="gfx/gift_box2.png",
+    z_extent=150,
+)
+
+t2.callbacks.init_production = grf.Eval(
+    f'''
+        PERM[0] = 0xFF
+        PERM[1] = 0
+        PERM[2] = 0xFF
+        PERM[3] = 0
+        PERM[4] = 0xFF
+        PERM[5] = 0
+        16
+    ''',
+    default=16,
+)
+
+# require all 3
+t3 = add_gift_industry(
+    tier=2,
+    image="gfx/gift_box3.png",
+    z_extent=150,
+)
+
+t3.callbacks.init_production = grf.Eval(
+    f'''
+        PERM[0] = 0xFF
+        PERM[1] = 0
+        PERM[2] = 0xFF
+        PERM[3] = 0
+        PERM[4] = 0xFF
+        PERM[5] = 0
+        16
+    ''',
+    default=16,
 )
 
 grf.main(g, 'cmevent.grf')
