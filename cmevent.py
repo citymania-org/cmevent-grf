@@ -1,3 +1,4 @@
+import itertools
 from typing import Optional, Union
 
 from typeguard import typechecked
@@ -6,11 +7,23 @@ import grf
 
 g = grf.NewGRF(
     grfid=b'CM\x01\x01',
-    name='CityMania Special Events 1.5',
-    description='CityMania Special Events 1.5',
-    min_compatible_version=4,
-    version=4,
+    name='CityMania Special Events 1.5.1',
+    description='Custom NewGRF for CityMania special events',
+    url='https://github.com/citymania-org/cmevent-grf',
+    min_compatible_version=5,
+    version=5,
 )
+
+T1_SCALE = 3  # num of trains 8pax+4mail
+T2_SCALE = 15  # approx num of trains
+T3_SCALE = 15  # num of trains 4+4+4
+
+g.add_int_parameter(name='T1 passenger requirement', description='', default=320 * T1_SCALE)
+g.add_int_parameter(name='T1 mail requirement', description='', default=120 * T1_SCALE)
+g.add_int_parameter(name='T2 every cargo requirement', description='', default=360 * (T2_SCALE // 3))
+g.add_int_parameter(name='T3 sweets requirement', description='', default=100 * T3_SCALE)
+g.add_int_parameter(name='T3 fizzy drinks requirement', description='', default=100 * T3_SCALE)
+g.add_int_parameter(name='T3 toys requirement', description='', default=80 * T3_SCALE)
 
 Industry = g.bind(grf.Industry)
 
@@ -33,8 +46,8 @@ g.add(grf.FileSprite(png, 10, 107, 25, 46, xofs=-15, yofs=-39))
 g.add(grf.ReplaceOldSprites([(2601, 1)]))
 g.add(grf.FileSprite(png, 123, 20, 64, 77, xofs=-31, yofs=-60))
 
-BATT, BUBL, COLA, CTCD, FZDR, PLST, SWET, SUGR, TOFF, TOYS, PASS, MAIL = \
-    g.set_cargo_table(['BATT', 'BUBL', 'COLA', 'CTCD', 'FZDR', 'PLST', 'SWET', 'SUGR', 'TOFF', 'TOYS', 'PASS', 'MAIL'])
+BATT, BUBL, COLA, CTCD, PLST, SUGR, TOFF, SWET, FZDR, TOYS, PASS, MAIL = \
+    g.set_cargo_table(['BATT', 'BUBL', 'COLA', 'CTCD', 'PLST', 'SUGR', 'TOFF', 'SWET', 'FZDR', 'TOYS', 'PASS', 'MAIL'])
 
 RAIL, ELRL, MONO, MGLV, UNIV, WETR, UNI1 = \
     g.set_railtype_table(['RAIL', 'ELRL', 'MONO', 'MGLV', 'UNIV', 'WETR', 'UNI1'])
@@ -497,6 +510,9 @@ def add_industry(substitute_type, **props):
     for k in ('production_types', 'acceptance_types'):
         if k in props:
             props[k] = [g.get_cargo_id(x) for x in props[k]]
+
+    props['ingame_probability'] = 1
+    props['mapgen_probability'] = 0
     g.add(grf.Define(
         id=substitute_type,
         feature=grf.INDUSTRY,
@@ -603,13 +619,34 @@ def add_gift_industry(tier, image, z_extent, **props):
         z_extent=z_extent,
         ground_sprite_id=1420,
         production_types=[],
+        cb_flags=0x4,  # enable storage by using production callback flag (no callback itself though)
         special_flags=0x10000 | 0x20000,
+        fund_cost=0xff,
         **props,
     )
 
     ind.callbacks.input_cargo = grf.Eval(
-        'PERM[extra_callback_info1_byte * 2]',
+        'PERM[extra_callback_info1_byte]',
         default=0xFF,
+    )
+
+    ind.callbacks.cargo_subtype_display = grf.Switch(
+        f'''
+            cargonum = extra_callback_info2 & 0xFF
+            TEMP[0x100] = var(0x6f, param=PERM[cargonum], shift=0, and=0xFFFFFFFF)
+            TEMP[0x101] = PERM[cargonum + 4]
+            extra_callback_info2
+        ''',
+        ranges={
+            (0x100 | 0, 0x100 | 2): g.strings.add(' ({COMMA}/{COMMA})').get_global_id() | 0x800,
+        },
+        default=0x401,
+    )
+
+    ind.tile_callbacks.tile_check = grf.Switch(
+        'var(0x60, param=0, shift=0, and=0xFF)',
+        ranges= {0: 0x400},  # only allow flat tiles so everything is flat
+        default = 0x401,
     )
 
     return ind
@@ -619,64 +656,72 @@ t1 = add_gift_industry(
     image="gfx/gift_box.png",
     z_extent=154,
     acceptance_types=['PASS', 'MAIL'],
+    map_colour=0xB7,
 )
 
 t1.callbacks.init_production = grf.Eval(
     f'''
         PERM[0] = {PASS}
-        PERM[1] = 1000
-        PERM[2] = {MAIL}
-        PERM[3] = 200
-        PERM[4] = 0xFF
-        PERM[5] = 0
+        PERM[1] = {MAIL}
+        PERM[2] = 0xFF
+        PERM[3] = 0xFF
+        PERM[4] = var(0x7f, param=0, shift=0, and=0xFFFFFFFF)
+        PERM[5] = var(0x7f, param=1, shift=0, and=0xFFFFFFFF)
+        PERM[6] = 0
         16
-    ''',
+    ''', # 1000 225
     default=16,
 )
 
-t1.callbacks.cargo_subtype_display = grf.Switch(
-    f'''TEMP[100] = PERM[1]''',
-    ranges={
-        0: g.strings.add(' ({COMMA}/{COMMA})').get_global_id(),
-    },
-    default=0x400,
-)
-
-# require 3 out of n
+# require 3 out of BATT, BUBL, COLA, CTCD, PLST, SUGR, TOFF,
 t2 = add_gift_industry(
     tier=2,
     image="gfx/gift_box2.png",
     z_extent=150,
+    acceptance_types=['BATT', 'BUBL', 'COLA', 'CTCD', 'PLST', 'SUGR', 'TOFF'],
+    map_colour=0xAA,
 )
 
 t2.callbacks.init_production = grf.Eval(
     f'''
-        PERM[0] = 0xFF
-        PERM[1] = 0
-        PERM[2] = 0xFF
-        PERM[3] = 0
-        PERM[4] = 0xFF
-        PERM[5] = 0
+        combination = gen_cargo_combination()
+        PERM[0] = combination >> 8
+        PERM[1] = (combination >> 4) & 15
+        PERM[2] = combination & 15
+        PERM[3] = 0xFF
+        PERM[4] = var(0x7f, param=2, shift=0, and=0xFFFFFFFF)
+        PERM[5] = PERM[4]
+        PERM[6] = PERM[4]
         16
     ''',
     default=16,
+    subroutines={
+        'gen_cargo_combination': grf.Switch(
+            code='random_bits % 35',
+            ranges={i:(a << 8) | (b << 4) | c for i,(a, b, c) in enumerate(itertools.combinations(range(7), 3))},
+            default=(1 << 4) | 2,
+        )
+    }
 )
 
-# require all 3
+# require all TOYS, FZDR, SWET
 t3 = add_gift_industry(
-    tier=2,
+    tier=3,
     image="gfx/gift_box3.png",
     z_extent=150,
+    acceptance_types=['SWET', 'FZDR', 'TOYS'],
+    map_colour=0x95,
 )
 
 t3.callbacks.init_production = grf.Eval(
     f'''
-        PERM[0] = 0xFF
-        PERM[1] = 0
-        PERM[2] = 0xFF
-        PERM[3] = 0
-        PERM[4] = 0xFF
-        PERM[5] = 0
+        PERM[0] = {SWET}
+        PERM[1] = {FZDR}
+        PERM[2] = {TOYS}
+        PERM[3] = 0xFF
+        PERM[4] = var(0x7f, param=3, shift=0, and=0xFFFFFFFF)
+        PERM[5] = var(0x7f, param=4, shift=0, and=0xFFFFFFFF)
+        PERM[6] = var(0x7f, param=5, shift=0, and=0xFFFFFFFF)
         16
     ''',
     default=16,
